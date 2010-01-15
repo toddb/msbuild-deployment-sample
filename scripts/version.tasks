@@ -6,7 +6,7 @@
 
   <Target Name="Version">
  
-    <CreateItem Include="$(MSBuildProjectDirectory)\Src\**\AssemblyInfo.cs">
+    <CreateItem Include="$(MSBuildProjectDirectory)\src\**\AssemblyInfo.cs">
       <Output TaskParameter="Include" ItemName="AssemblyInfos"/>
     </CreateItem>
 
