@@ -1,0 +1,5 @@
+- default task help
+- refactor error handling eg <Exec Command="mkdir $(ReleasePath)" ContinueOnError="true"/> <Exec Command="if not exist $(ReleasePath) mkdir $(ReleasePath)" /> 
+- task naming convention reviewed: decision to move more like ant
+- remove cls from bat
+- move db-create, db-drop into msbuild tasks

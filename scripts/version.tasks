@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="HelpVersion" ToolsVersion="3.5" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <Import Project="$(MSBuildProjectDirectory)\lib\MSBuildCommunityTasks\MSBuild.Community.Tasks.Targets" />
+  <Import Project="$(MSBuildProjectDirectory)\VERSION.xml" />
+
+  <Target Name="Version">
+ 
+    <CreateItem Include="$(MSBuildProjectDirectory)\Src\**\AssemblyInfo.cs">
+      <Output TaskParameter="Include" ItemName="AssemblyInfos"/>
+    </CreateItem>
+
+    <CreateItem Include="$(Major).$(Minor).$(Build).$(Revision)">
+      <Output TaskParameter="Include" PropertyName="Version"/>
+    </CreateItem>
+
+    <Message Text="Version: $(Version)"/>
+    
+    <!-- If you are running a version control system with READONLY locking 
+         you will need to set and reset the readonly attributes 
+    -->
+    
+    <FileUpdate
+        Files="@(AssemblyInfos)"
+        Regex="\[\s*assembly\s*:\s*AssemblyVersion\s*\(\s*&quot;[\d\.\*]+&quot;\s*\)\s*\]"
+        ReplacementText="[assembly: AssemblyVersion(&quot;$(Version)&quot;)]"
+        />
+    <FileUpdate
+            Files="@(AssemblyInfos)"
+            Regex="\[\s*assembly\s*:\s*AssemblyFileVersion\s*\(\s*&quot;[\d\.\*]+&quot;\s*\)\s*\]"
+            ReplacementText="[assembly: AssemblyFileVersion(&quot;$(Version)&quot;)]"
+        />
+    <!-- Target <AssemblyInfo> replaces the entire file, we only want to update the version -->
+
+  </Target>
+
+  <Target Name="SvnVersion">
+    <Message Text="Getting Revision from SVN - using C:\Program Files\Subversion\bin\svnversion.exe"/>
+    <SvnVersion LocalPath="$(MSBuildProjectDirectory)" Condition="'$(Revision)'=='0'">
+      <Output TaskParameter="Revision" PropertyName="Revision" />
+    </SvnVersion>
+    <CallTarget Targets="Version" />
+  </Target>
+
+  <Target Name="HelpVersion">
+    <Message Text="
+             
+    Updates all the AssemblyInfo.cs files with VERSION (major, minor, build) and revision looked up from svn
+    
+    msbuild /t:Version
+
+    Targets:
+     - Version
+     - SvnVersion
+     
+    Dependencies: svn commandline client (svnversion.exe - installed to C:\Program Files\Subversion\bin)
+             
+             " />
+  </Target>
+
+</Project>

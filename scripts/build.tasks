@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="HelpBuild"  ToolsVersion="3.5" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <Import Project="$(MSBuildProjectDirectory)\scripts\version.tasks" />
+
+  <PropertyGroup>
+    <Revision Condition="'$(Revision)'==''">0</Revision>
+    <Version Condition="'$(Version)'==''">$(Major).$(Minor).$(Build).$(Revision)</Version>
+    <DropLocation Condition="'$(DropLocation)'==''">$(MSBuildProjectDirectory)\CodeToDeploy\Publish</DropLocation>
+    <BuildCmd Condition="'$(BuildCmd)'==''">ReBuild</BuildCmd>
+    <ReleaseEnvironment Condition="'$(ReleaseEnvironment)'==''">Test</ReleaseEnvironment>
+
+    <ReleaseName>Sample-$(ReleaseEnvironment)</ReleaseName>
+    <ReleasePath>$(DropLocation)\..\Releases</ReleasePath>
+    <DropLocationPublicWebsite>$(DropLocation)\site</DropLocationPublicWebsite>
+    <BinariesRoot>$(MSBuildProjectDirectory)\Src\UI</BinariesRoot>
+
+    <MSBuildExtensionsPath>$(MSBuildProjectDirectory)\lib</MSBuildExtensionsPath>
+    <TasksPath>$(MSBuildProjectDirectory)\lib\extensionpack\MSBuild.ExtensionPack.tasks</TasksPath>
+  </PropertyGroup>
+  
+  <Import Project="$(TasksPath)"/>
+
+  <ProjectExtensions>
+    <Description>Build Releasable Sample Public Website</Description>
+  </ProjectExtensions>
+  
+  <ItemGroup>    
+    <SolutionToBuild Include="src\Sample.sln" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(ReleaseEnvironment)'!='Dev'">
+    <ConfigurationToBuild Include="Release|Any CPU">
+      <FlavorToBuild>Release</FlavorToBuild>
+      <PlatformToBuild>Any CPU</PlatformToBuild>
+    </ConfigurationToBuild>
+    <SitePublicFiles Include="$(BinariesRoot)\**\*" Exclude="$(BinariesRoot)\**\.svn\**\*;$(BinariesRoot)\**\obj\**\*;$(BinariesRoot)\**\*.user;$(BinariesRoot)\**\*.suo;$(BinariesRoot)\**\*.csproj;$(BinariesRoot)\**\*.cs;$(BinariesRoot)\**\*.resx;$(BinariesRoot)\**\*.cs;$(BinariesRoot)\**\*.pdb;$(BinariesRoot)\**\Configs\**\*" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(ReleaseEnvironment)'=='Dev'">
+    <ConfigurationToBuild Include="Debug|Any CPU">
+      <FlavorToBuild>Debug</FlavorToBuild>
+      <PlatformToBuild>Any CPU</PlatformToBuild>
+    </ConfigurationToBuild>
+    <!-- includes the pdb files -->
+    <SitePublicFiles Include="$(BinariesRoot)\**\*" Exclude="$(BinariesRoot)\**\.svn\**\*;$(BinariesRoot)\**\obj\**\*;$(BinariesRoot)\**\*.user;$(BinariesRoot)\**\*.suo;$(BinariesRoot)\**\*.csproj;$(BinariesRoot)\**\*.cs;$(BinariesRoot)\**\*.resx;$(BinariesRoot)\**\*.cs;$(BinariesRoot)\**\Configs\**\*" />
+  </ItemGroup>
+
+  <!--
+    The configuration files are stored in Configs\$(ReleaseEnvironment), except
+    for the debug environment, where they are stored in situ, as the active
+    configuration files.
+  -->
+  <ItemGroup Condition="'$(ReleaseEnvironment)'=='Dev'">
+    <WebConfig Include="$(BinariesRoot)\Web.config" />
+    <ConfigFiles Include="$(BinariesRoot)\Configs\*.config" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(ReleaseEnvironment)'!='Dev'">
+    <WebConfig Include="$(BinariesRoot)\Configs\$(ReleaseEnvironment)\Web.config" />
+    <ConfigFiles Include="$(BinariesRoot)\Configs\$(ReleaseEnvironment)\Configs\*.config" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <TasksFiles Include="lib\extensionpack\*" />
+    <MigratorFiles Include="lib\migratordotnet\*" />
+    <DeployFiles Include="scripts\directorybrowsing.xml" />
+    <DeployFiles Include="scripts\deploy.proj" />
+    <DbTaskFiles Include="scripts\db-setup.tasks" />
+    <DbTaskFiles Include="scripts\migrations.tasks" />
+    <DbSqlFiles Include="scripts\db\**\*.sql" />
+  </ItemGroup>
+
+  <Target Name="Package" DependsOnTargets="Version;Clean;Publish;Zip"/>
+  <Target Name="Install" DependsOnTargets="Package;Extract;Deploy"/>
+
+  <Target Name="Publish">
+    <MakeDir Directories="$(DropLocationPublicWebsite)" Condition = "!Exists('$(DropLocationPublicWebsite)')" />
+    <!-- Move over the base files -->
+    <Copy SourceFiles="@(SitePublicFiles)" DestinationFolder ="$(DropLocationPublicWebsite)\%(SitePublicFiles.RecursiveDir)" SkipUnchangedFiles="true"/>
+    <Copy SourceFiles="@(DeployFiles)" DestinationFolder ="$(DropLocation)\%(DeployFiles.RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(WebConfig)" DestinationFolder="$(DropLocationPublicWebsite)" />
+    <Copy SourceFiles="@(ConfigFiles)" DestinationFolder="$(DropLocationPublicWebsite)\Configs" />
+    <Copy SourceFiles="@(TasksFiles)" DestinationFolder="$(DropLocation)\lib\extensionpack\%(DeployFiles.RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(MigratorFiles)" DestinationFolder="$(DropLocation)\lib\migratordotnet\%(DeployFiles.RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(DbTaskFiles)" DestinationFolder="$(DropLocation)\scripts\%(DbCreateFiles.RecursiveDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(DbSqlFiles)" DestinationFolder="$(DropLocation)\scripts\db\%(DbCreateFiles.RecursiveDir)" SkipUnchangedFiles="true" />
+    <!-- Create a file that simply has the Version number as its name for ease of identification-->
+    <Exec Command="echo .> &quot;$(DropLocation)\$(Version)&quot;"/>
+    <Exec Command="echo .> &quot;$(DropLocation)\_$(ReleaseEnvironment)_ENVIRONMENT&quot;"/>
+    <!-- Create the batch files for deployment witin each environment -->
+    <Exec Command="echo /p:Version=$(Version);Environment=Prod > &quot;$(DropLocation)\deploy.rsp&quot;"/>
+    <Exec Command="echo %WINDIR%\Microsoft.NET\Framework\v3.5\msbuild.exe @deploy.rsp /t:DeployWebsite /v:d /fl > &quot;$(DropLocation)\Deploy.bat&quot;"/>
+    <Exec Command="echo %WINDIR%\Microsoft.NET\Framework\v3.5\msbuild.exe @deploy.rsp /t:MigrateUp /v:d /fl > &quot;$(DropLocation)\Migrate.bat&quot;"/>
+  </Target>
+
+  <Target Name="Clean">
+    <RemoveDir Directories="$(DropLocation)" />
+  </Target>
+
+  <Target Name="CleanReleases">
+    <RemoveDir Directories="$(ReleasePath)" />
+  </Target>
+
+  <Target Name="Zip" DependsOnTargets="VersionReleasePaths">
+    <MakeDir Directories="$(ReleasePath)" Condition = "!Exists('$(ReleasePath)')" />
+    <MSBuild.ExtensionPack.Compression.Zip TaskAction="Create" CompressPath="$(DropLocation)" RemoveRoot="$(DropLocation)\" ZipFileName="$(ReleaseZipFile)"/>
+  </Target>
+
+  <Target Name="SelfExtracting" DependsOnTargets="VersionReleasePaths">
+    <Message Text="$(MSBuildProjectDirectory)\lib\freeextractor\MakeSFX.exe /nogui /zip=%22$(ReleaseZipFile)%22 /sfx=%22$(ReleaseExeFile)%22 /defaultpath=%22%24temp%24\$(Version)%22 /exec=%22Deploy.bat%22 /autoextract /overwrite /delete"  />
+    <Exec Command="$(MSBuildProjectDirectory)\lib\freeextractor\MakeSFX.exe /nogui /zip=%22$(ReleaseZipFile)%22 /sfx=%22$(ReleaseExeFile)%22 /defaultpath=%22%24temp%24\$(Version)%22 /exec=%22Deploy.bat Environment=Beta%22 /autoextract /overwrite /delete" IgnoreExitCode="true"  />
+  </Target>
+
+  <Target Name="Extract" DependsOnTargets="VersionReleasePaths">
+    <MakeDir Directories="$(ExtractPath)"  Condition = "!Exists('$(ExtractPath)')"/>
+    <MSBuild.ExtensionPack.Compression.Zip TaskAction="Extract" ExtractPath="$(ExtractPath)" ZipFileName="$(ReleaseZipFile)"/>
+  </Target>
+
+  <Target Name="Deploy" DependsOnTargets="VersionReleasePaths">
+    <Exec Command="$(ExtractPath)\deploy.bat $(ExtractPath)" ContinueOnError="false" />
+  </Target>
+
+  <Target Name="VersionReleasePaths"> 
+    <!-- Allows for creating properties based on the svn revision -->
+    <CreateItem Include="$(ReleasePath)\$(Version)-$(ReleaseEnvironment)">
+      <Output PropertyName="ExtractPath" TaskParameter="Include"/>
+    </CreateItem>
+    <CreateItem Include="$(ReleasePath)\$(ReleaseName)-$(Version).zip">
+      <Output PropertyName="ReleaseZipFile" TaskParameter="Include"/>
+    </CreateItem>
+    <CreateItem Include="$(ReleasePath)\$(ReleaseName)-$(Version).exe">
+      <Output PropertyName="ReleaseExeFile" TaskParameter="Include"/>
+    </CreateItem>
+  </Target>
+
+  <Target Name="HelpBuild">
+    <Message Text="
+    
+    msbuild /t:Package
+
+    Examples:
+      msbuild /t:Install
+      msbuild /t:Install /p:ReleaseEnvironment=Beta
+      msbuild @build.properties /t:Package /v:d 
+ 
+    Variables that can be overridden:
+      DropLocation=C:\Binaries
+      ReleaseEnvironment=Dev|[Test]|Beta|Prod
+      BuildCmd=Build|[Rebuild] 
+
+    Targets:
+     - Compile
+     - Clean
+     - CleanReleases
+     - Publish
+     - Zip
+     - Extract
+     - Deploy
+     - TODO
+     
+     - Package (Compile;Clean;Publish;Zip)
+     - Install (Compile;Clean;Publish;Zip;Extract;Deploy) - will require IIS
+                                                            setup because it 
+                                                            runs the 
+                                                            deploy.bat 
+                                                            set of tasks
+     
+    Log output: msbuild.log
+     
+    Dependencies: Zip/Extract must have J# Redist installed
+                  http://www.msbuildextensionpack.com/help/3.5.4.0/index.html
+             
+             " />
+  </Target>
+
+  <Target Name="TODO">
+    <Message Text="
+			        - fix msbuild dependencies on build tasks
+              - refactor out SDC tasks (related to deployment.tasks)
+              - error checking for J# redist not included
+              - error check for build types (Dev|Test|Beta|Prod)
+              - look to refactor the excludes in the public website file list to make easier to read
+              - refactor out the current config per environment strategy
+             "/>
+  </Target>
+</Project>

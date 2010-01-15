@@ -1,0 +1,746 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project InitialTargets="CheckSettingsForEndToEndIteration"
+         xmlns="http://schemas.microsoft.com/developer/msbuild/2003" >
+
+  <!-- These tasks are specific to the Team Build process defined in this file -->
+  <UsingTask TaskName="Microsoft.TeamFoundation.Build.Tasks.Get"
+             AssemblyFile="$(TeamBuildRefPath)\Microsoft.TeamFoundation.Build.Tasks.VersionControl.dll" />
+  <UsingTask TaskName="Microsoft.TeamFoundation.Build.Tasks.Label"
+             AssemblyFile="$(TeamBuildRefPath)\Microsoft.TeamFoundation.Build.Tasks.VersionControl.dll" />
+  <UsingTask TaskName="Microsoft.TeamFoundation.Build.Tasks.CreateNewWorkItem"
+             AssemblyFile="$(TeamBuildRefPath)\Microsoft.TeamFoundation.Build.Tasks.VersionControl.dll" />
+  <UsingTask TaskName="Microsoft.TeamFoundation.Build.Tasks.GenCheckinNotesUpdateWorkItems"
+             AssemblyFile="$(TeamBuildRefPath)\Microsoft.TeamFoundation.Build.Tasks.VersionControl.dll" />
+  <UsingTask TaskName="Microsoft.TeamFoundation.Build.TeamBuildMessage"
+             AssemblyFile="$(TeamBuildRefPath)\Microsoft.TeamFoundation.Build.Tasks.dll" />
+  <UsingTask TaskName="Microsoft.TeamFoundation.Build.UpdateBuildNumberDropLocation"
+             AssemblyFile="$(TeamBuildRefPath)\Microsoft.TeamFoundation.Build.Tasks.dll" />
+  <UsingTask TaskName="Microsoft.TeamFoundation.Build.Tasks.CreateWorkspaceTask"
+             AssemblyFile="$(TeamBuildRefPath)\Microsoft.TeamFoundation.Build.Tasks.VersionControl.dll" />
+  <UsingTask TaskName="Microsoft.TeamFoundation.Build.Tasks.DeleteWorkspaceTask"
+             AssemblyFile="$(TeamBuildRefPath)\Microsoft.TeamFoundation.Build.Tasks.VersionControl.dll" />
+  <UsingTask TaskName="TestToolsTask"
+             AssemblyFile="$(TeamBuildRefPath)\Microsoft.VisualStudio.QualityTools.MSBuildTasks.dll" />
+
+  <PropertyGroup>
+    <!-- Set this property to true to skip Clean target -->
+    <SkipClean Condition=" '$(SkipClean)'=='' " >false</SkipClean>
+
+    <!-- Set this property to true to skip Get task -->
+    <SkipGet Condition=" '$(SkipGet)'=='' " >false</SkipGet>
+
+    <!-- Set this property to true to skip Label task -->
+    <SkipLabel Condition=" '$(SkipLabel)'=='' " >false</SkipLabel>
+
+    <!-- Set this property to true to skip InitializeWorkspace target -->
+    <SkipInitializeWorkspace Condition=" '$(SkipInitializeWorkspace)'=='' " >false</SkipInitializeWorkspace>
+
+    <!-- Set this property to true to skip PostBuild target -->
+    <SkipPostBuild Condition=" '$(SkipPostBuild)'=='' " >false</SkipPostBuild>
+
+    <!-- Set this property to true to skip DropBuild target -->
+    <SkipDropBuild Condition=" '$(SkipDropBuild)'=='' " >false</SkipDropBuild>
+
+    <!-- Set this property to true to skip executing CreateWorkItem task on build break -->
+    <SkipWorkItemCreation Condition=" '$(SkipWorkItemCreation)'=='' " >false</SkipWorkItemCreation>
+
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+         Name of the workspace that will be used for getting sources.
+         Note:- Maximum length of workspace name can be upto 64 char long.
+    -->
+    <WorkspaceName Condition=" '$(WorkspaceName)'=='' " >$(COMPUTERNAME)_$(TeamProject)_$(BuildType)</WorkspaceName>
+
+    <!-- The location of Team Build task assemblies on the build machine -->
+    <DevEnvDir Condition=" '$(DevEnvDir)'=='' " >$(NetSamplePath)\..\..\Common7\IDE</DevEnvDir>
+    <TeamBuildRefPath Condition=" '$(TeamBuildRefPath)'=='' " >$(DevEnvDir)\PrivateAssemblies</TeamBuildRefPath>
+
+    <!-- The location of Code Analysis assemblies on the build machine -->
+    <VSINSTALLDIR Condition=" '$(VSINSTALLDIR)'=='' " >$(NetSamplePath)\..\..</VSINSTALLDIR>
+    <FxCopDir Condition=" '$(FxCopDir)'=='' " >$(VSINSTALLDIR)\Team Tools\Static Analysis Tools\FxCop</FxCopDir>
+
+    <!-- Defining the scope of query for labels in non-desktop builds scenarios-->
+    <LabelQueryScope>@$/$(TeamProject)</LabelQueryScope>
+
+    <!-- By default it is desktop build. Build agent overriddes this for end to end build -->
+    <IsDesktopBuild Condition=" '$(IsDesktopBuild)'=='' " >true</IsDesktopBuild>
+
+    <!-- The default solution root for desktop build -->
+    <SolutionRoot Condition=" '$(SolutionRoot)'=='' and '$(IsDesktopBuild)'=='true' " >$(MSBuildProjectDirectory)\..\..</SolutionRoot>
+
+    <!-- The default solution root for end to end build -->
+    <SolutionRoot Condition=" '$(SolutionRoot)'=='' and '$(IsDesktopBuild)'!='true' " >$(MSBuildProjectDirectory)\..\Sources</SolutionRoot>
+
+    <!-- The default binaries root -->
+    <BinariesRoot Condition=" '$(BinariesRoot)'=='' " >$(SolutionRoot)\..\Binaries</BinariesRoot>
+
+    <!-- The default test results root -->
+    <TestResultsRoot Condition=" '$(TestResultsRoot)'=='' " >$(SolutionRoot)\..\TestResults</TestResultsRoot>
+
+    <!-- Additional VCOverride properties for C++ projects -->
+    <AdditionalVCOverrides></AdditionalVCOverrides>
+  </PropertyGroup>
+
+  <!-- Check settings for EndToEndIteration -->
+  <Target Name="CheckSettingsForEndToEndIteration"
+          Condition=" '$(IsDesktopBuild)'!='true' ">
+    <Error Condition=" '$(TeamFoundationServerUrl)'=='' " Text="The TeamFoundationServerUrl property is not set." />
+    <Error Condition=" '$(TeamProject)'=='' " Text="The TeamProject property is not set." />
+    <Error Condition=" '$(BuildType)'=='' " Text="The BuildType property is not set." />
+    <Error Condition=" '$(BuildURI)'=='' " Text="The BuildURI property is not set." />
+    <Error Condition=" '$(BuildNumber)'=='' " Text="The BuildNumber property is not set." />
+    <Error Condition=" '$(DropLocation)'=='' " Text="The DropLocation property is not set." />
+    <Error Condition=" '$(BuildDirectoryPath)'=='' " Text="The BuildDirectoryPath property is not set." />
+    
+    <Message Text="TeamFoundationServerUrl=$(TeamFoundationServerUrl)" Importance="Low" />
+    <Message Text="TeamProject=$(TeamProject)" Importance="Low" />
+    <Message Text="BuildType=$(BuildType)" Importance="Low" />
+    <Message Text="BuildURI=$(BuildURI)" Importance="Low" />
+    <Message Text="BuildNumber=$(BuildNumber)" Importance="Low" />
+    <Message Text="DropLocation=$(DropLocation)" Importance="Low" />
+    <Message Text="BuildDirectory=$(BuildDirectoryPath)" Importance="Low" />
+  </Target>
+
+  <PropertyGroup>
+    <DesktopBuildDependsOn>
+      Compile;
+      Test;
+    </DesktopBuildDependsOn>
+  </PropertyGroup>
+  <Target Name="DesktopBuild"
+          Condition=" '$(IsDesktopBuild)'=='true' "
+          DependsOnTargets="$(DesktopBuildDependsOn)" />
+
+  <!-- Rebuild target for desktop builds -->
+  <PropertyGroup>
+    <DesktopRebuildDependsOn>
+      Clean;
+      DesktopBuild;
+    </DesktopRebuildDependsOn>
+  </PropertyGroup>
+  <Target Name="DesktopRebuild"
+          Condition=" '$(IsDesktopBuild)'=='true' "
+          DependsOnTargets="$(DesktopRebuildDependsOn)" />
+
+  <!-- Override this target to run tasks before EndToEndIteration -->
+  <Target Name="BeforeEndToEndIteration" />
+
+  <!--
+       Plug in custom task for customising the build number.
+       Make sure that the task outputs a property with the name 'BuildNumber'.
+    -->
+  <Target Name="BuildNumberOverrideTarget" />
+
+  <PropertyGroup>
+    <EndToEndIterationDependsOn>
+      BeforeEndToEndIteration;
+      BuildNumberOverrideTarget;
+      InitializeEndToEndIteration;
+      Clean;
+      TeamBuild;
+      DropBuild;
+      AfterEndToEndIteration;
+    </EndToEndIterationDependsOn>
+  </PropertyGroup>
+  <!-- Entry point: this target is invoked on the build machine by the build agent -->
+  <Target Name="EndToEndIteration"
+          Condition=" '$(IsDesktopBuild)'!='true' "
+          DependsOnTargets="$(EndToEndIterationDependsOn)" />
+
+  <!-- Override this target to run tasks after EndToEndIteration -->
+  <Target Name="AfterEndToEndIteration" />
+
+  <!-- Inform build process that this invocation is not desktop build -->
+  <Target Name="InitializeEndToEndIteration" >
+
+    <!-- Slash property -->
+    <CreateProperty Value="%5C" Condition="!HasTrailingSlash('$(DropLocation)')" >
+      <Output TaskParameter="Value" PropertyName="Slash" />
+    </CreateProperty>
+
+    <!-- Update the build number and drop location in the database. This task will also 
+        create the drop directory and grant the service account full rights on it-->
+    <UpdateBuildNumberDropLocation
+          TeamFoundationServerUrl="$(TeamFoundationServerUrl)"
+          BuildUri="$(BuildURI)"
+          BuildNumber="$(BuildNumber)"
+          DropLocation="$(DropLocation)$(Slash)$(BuildNumber)" />
+
+    <!-- Indicate to logger whether tests are being run or not -->
+    <TeamBuildMessage Tag="RunTest" Value="$(RunTest)" />
+
+  </Target>
+
+  <!-- Please override this target to plugin pre-clean custom tasks -->
+  <Target Name="BeforeClean" />
+
+  <PropertyGroup>
+    <CleanDependsOn>
+      BeforeClean;
+      CoreClean;
+      AfterClean;
+    </CleanDependsOn>
+  </PropertyGroup>
+  <!-- Batch target for cleanup -->
+  <Target Name="Clean"          
+          DependsOnTargets="$(CleanDependsOn)" />
+
+  <!-- Please override this target to plugin post-clean custom tasks -->
+  <Target Name="AfterClean" />
+
+  <PropertyGroup>
+    <CoreCleanDependsOn/>
+  </PropertyGroup>
+  <!-- Target will be invoked for each platform/configuration for both desktop and non desktop scenarios-->
+  <Target Name="CoreClean"
+          DependsOnTargets="$(CoreCleanDependsOn)"
+	  Condition=" '$(SkipClean)'!='true' "
+          Inputs="%(ConfigurationToBuild.PlatformToBuild);%(ConfigurationToBuild.FlavorToBuild)"
+          Outputs="%(ConfigurationToBuild.PlatformToBuild);%(ConfigurationToBuild.FlavorToBuild)" >
+
+    <!-- OutDirForClean for not Any CPU -->
+    <CreateItem
+          Condition=" '%(ConfigurationToBuild.PlatformToBuild)'!='Any CPU' "
+          Include="$(BinariesRoot)\%(ConfigurationToBuild.PlatformToBuild)\%(ConfigurationToBuild.FlavorToBuild)\" >
+      <Output TaskParameter="Include" ItemName="OutDirForClean" />
+    </CreateItem>
+
+    <!-- OutDirForClean for Any CPU -->
+    <CreateItem
+          Condition=" '%(ConfigurationToBuild.PlatformToBuild)'=='Any CPU' "
+          Include="$(BinariesRoot)\%(ConfigurationToBuild.FlavorToBuild)\" >
+      <Output TaskParameter="Include" ItemName="OutDirForClean" />
+    </CreateItem>
+
+    <!-- OutDir property - This is to ensure we have absolute path as property -->
+    <CreateProperty Value="%(OutDirForClean.FullPath)" >
+      <Output TaskParameter="Value" PropertyName="OutDir" />
+    </CreateProperty>
+
+     <!-- Call MSBuild /t:Clean for desktop build -->
+    <MSBuild
+          Projects="@(SolutionToBuild)"
+          Condition="'$(IsDesktopBuild)'=='true'"
+          Properties="Configuration=%(ConfigurationToBuild.FlavorToBuild);Platform=%(ConfigurationToBuild.PlatformToBuild);RunCodeAnalysis=$(RunCodeAnalysis);SkipInvalidConfigurations=true;FxCopDir=$(FxCopDir);OutDir=$(OutDir)"
+          Targets="Clean" />
+
+    <!-- Clean SolutionRoot only for end to end build -->
+    <RemoveDir
+          Condition="Exists('$(SolutionRoot)') and '$(IsDesktopBuild)'!='true'"
+          Directories="$(SolutionRoot)" />
+
+    <RemoveDir
+          Condition="Exists('$(BinariesRoot)') and '$(IsDesktopBuild)'!='true'"
+          Directories="$(BinariesRoot)" />
+
+    <RemoveDir
+          Condition="Exists('$(TestResultsRoot)') and '$(IsDesktopBuild)'!='true'"
+          Directories="$(TestResultsRoot)" />
+
+  </Target>
+
+  <PropertyGroup>
+    <TeamBuildDependsOn>
+      InitializeBuild;
+      PreBuild;
+      Compile;
+      PostBuild;
+      Test;
+      PackageBinaries;
+    </TeamBuildDependsOn>
+  </PropertyGroup>
+  <!-- Batch target for non desktop build -->
+  <Target Name="TeamBuild"
+          Condition=" '$(IsDesktopBuild)'!='true' "
+          DependsOnTargets="$(TeamBuildDependsOn)" />
+
+  <Target Name="InitializeBuild"
+          Condition=" '$(IsDesktopBuild)'!='true' " >
+
+    <!-- Create folder for creating new enlistment -->
+    <MakeDir
+          Directories="$(SolutionRoot)"
+          Condition="!Exists('$(SolutionRoot)')" />
+
+  </Target>
+
+  <!-- Please override this target to plugin custom tasks before get task -->
+  <Target Name="BeforeGet" />
+
+  <PropertyGroup>
+    <PreBuildDependsOn>
+      InitializeWorkspace;
+      BeforeGet;      
+      CoreGet;
+      AfterGet;
+      BeforeLabel;      
+      CoreLabel;
+      AfterLabel;
+    </PreBuildDependsOn>
+  </PropertyGroup>
+  <Target Name="PreBuild"
+          Condition=" '$(IsDesktopBuild)'!='true' "
+          DependsOnTargets="$(PreBuildDependsOn)" />
+
+  <!-- Please override this target to plugin custom tasks after get task -->
+  <Target Name="AfterGet" />
+
+  <PropertyGroup>
+    <!-- Mapping file to use for creating workspace -->
+    <WorkspaceMappingFile>WorkspaceMapping.xml</WorkspaceMappingFile>
+    
+    <InitializeWorkspaceDependsOn/>
+  </PropertyGroup>
+  <Target Name="InitializeWorkspace"
+          Condition=" '$(SkipInitializeWorkspace)'!='true' and '$(IsDesktopBuild)'!='true' "
+          DependsOnTargets="$(InitializeWorkspaceDependsOn)" >
+
+    <!-- Delete the workspace left by previous run -->
+    <DeleteWorkspaceTask
+          TeamFoundationServerUrl="$(TeamFoundationServerUrl)"
+          Name="$(WorkspaceName)" />
+
+    <!-- Create the workspace enlistment -->
+    <CreateWorkspaceTask
+          TeamFoundationServerUrl="$(TeamFoundationServerUrl)"
+          MappingFile="$(WorkspaceMappingFile)"
+          LocalPath="$(SolutionRoot)"
+          Name="$(WorkspaceName)"
+          TeamProject="$(TeamProject)" />
+
+  </Target>
+
+  <PropertyGroup>
+    <!-- Set this to false to do incremental get -->
+    <ForceGet>true</ForceGet>
+
+    <!-- Set this to false to do only top-level get -->
+    <RecursiveGet>true</RecursiveGet>
+
+    <CoreGetDependsOn/>
+  </PropertyGroup>
+  <Target Name="CoreGet"
+          Condition=" '$(IsDesktopBuild)'!='true' "
+          DependsOnTargets="$(CoreGetDependsOn)" >
+
+    <!-- Get all the latest sources from the given workspace-->
+    <Get
+          Condition=" '$(SkipGet)'!='true' "
+          Workspace="$(WorkspaceName)"
+          Recursive="$(RecursiveGet)"
+          Force="$(ForceGet)" />
+	  
+  </Target>
+  
+  <!-- Please override this target to plugin custom tasks before label task -->
+  <Target Name="BeforeLabel" />
+
+  <PropertyGroup>
+    <CoreLabelDependsOn/>
+  </PropertyGroup>
+  <Target Name="CoreLabel"
+          Condition=" '$(IsDesktopBuild)'!='true' "
+          DependsOnTargets="$(CoreLabelDependsOn)" >
+
+    <!-- Label all the latest (non deleted) files in the workspace -->
+    <Label
+          Condition=" '$(SkipLabel)'!='true' "
+          Workspace="$(WorkspaceName)"
+          Name="$(BuildNumber)"
+          Version="W$(WorkspaceName)"
+          Files="$/$(TeamProject)"
+          Recursive="true" />
+
+  </Target>
+
+  <!-- Please override this target to plugin custom tasks after label task -->
+  <Target Name="AfterLabel" />
+
+  <!-- Please override this target to plugin custom tasks before compile -->
+  <Target Name="BeforeCompile" />
+
+  <PropertyGroup>
+    <CompileDependsOn>
+      BeforeCompile;
+      CoreCompile;
+      AfterCompile;
+    </CompileDependsOn>
+  </PropertyGroup>
+  <!-- Batch target for compile tasks -->
+  <Target Name="Compile"
+          DependsOnTargets="$(CompileDependsOn)" />
+
+  <!-- Please override this target to plugin custom tasks after compile -->
+  <Target Name="AfterCompile" />
+
+  <PropertyGroup>
+    <!-- Additional constants -->
+    <TeamBuildConstants>_TEAM_BUILD_</TeamBuildConstants>
+    <CoreCompileDependsOn/>
+  </PropertyGroup>
+  <Target Name="CoreCompile"
+          DependsOnTargets="$(CoreCompileDependsOn)"
+          Inputs="%(ConfigurationToBuild.PlatformToBuild);%(ConfigurationToBuild.FlavorToBuild)"
+          Outputs="%(ConfigurationToBuild.PlatformToBuild);%(ConfigurationToBuild.FlavorToBuild)" >
+
+    <MakeDir
+          Directories="$(BinariesRoot)"
+          Condition="!Exists('$(BinariesRoot)')" />
+
+    <!-- OutDirForCompile for not Any CPU -->
+    <CreateItem
+          Condition=" '%(ConfigurationToBuild.PlatformToBuild)'!='Any CPU' "
+          Include="$(BinariesRoot)\%(ConfigurationToBuild.PlatformToBuild)\%(ConfigurationToBuild.FlavorToBuild)\" >
+      <Output TaskParameter="Include" ItemName="OutDirForCompile" />
+    </CreateItem>
+
+    <!-- OutDirForCompile for Any CPU -->
+    <CreateItem
+          Condition=" '%(ConfigurationToBuild.PlatformToBuild)'=='Any CPU' "
+          Include="$(BinariesRoot)\%(ConfigurationToBuild.FlavorToBuild)\" >
+      <Output TaskParameter="Include" ItemName="OutDirForCompile" />
+    </CreateItem>
+
+    <!-- OutDir property - This is to ensure we have absolute path as property -->
+    <CreateProperty Value="%(OutDirForCompile.FullPath)" >
+      <Output TaskParameter="Value" PropertyName="OutDir" />
+    </CreateProperty>
+
+    <!-- First part of VCOverride file -->
+    <CreateProperty Value="%3C?xml version=%221.0%22?%3E%0D%0A%3CVisualStudioPropertySheet ProjectType=%22Visual C++%22 Version=%228.00%22 Name=%22Team Build Overrides%22 OutputDirectory=%22$(OutDir)%22%3E%0D%0A" >
+      <Output TaskParameter="Value" PropertyName="VCOverridesString1"/>
+    </CreateProperty>
+
+    <!-- Third part of VCOverride file -->
+    <CreateProperty Value="%3C/VisualStudioPropertySheet%3E" >
+      <Output TaskParameter="Value" PropertyName="VCOverridesString3"/>
+    </CreateProperty>
+
+    <!-- RunCodeAnalysis option -->
+    <CreateProperty
+          Condition=" '$(RunCodeAnalysis)'=='Always' "
+          Value="RunCodeAnalysis=true" >
+      <Output TaskParameter="Value" PropertyName="CodeAnalysisOption" />
+    </CreateProperty>
+
+    <!-- Second part of VCOverride file when RunCodeAnalysis is always -->
+    <CreateProperty 
+          Condition=" '$(RunCodeAnalysis)'=='Always' "
+          Value="%09%3CTool Name=%22VCCLCompilerTool%22 EnablePREfast=%22true%22 /%3E%0D%0A%09%3CTool Name=%22VCFxCopTool%22 EnableFxCop=%22true%22 /%3E%0D%0A" >
+      <Output TaskParameter="Value" PropertyName="VCOverridesString2"/>
+    </CreateProperty>
+
+    <CreateProperty
+          Condition=" '$(RunCodeAnalysis)'=='Never' "
+          Value="RunCodeAnalysis=false" >
+      <Output TaskParameter="Value" PropertyName="CodeAnalysisOption" />
+    </CreateProperty>
+
+    <!-- Second part of VCOverride file when RunCodeAnalysis is never -->
+    <CreateProperty 
+          Condition=" '$(RunCodeAnalysis)'=='Never' "
+          Value="%09%3CTool Name=%22VCCLCompilerTool%22 EnablePREfast=%22false%22 /%3E%0D%0A%09%3CTool Name=%22VCFxCopTool%22 EnableFxCop=%22false%22 /%3E%0D%0A" >
+      <Output TaskParameter="Value" PropertyName="VCOverridesString2"/>
+    </CreateProperty>
+
+    <!-- ReferencePath option -->
+    <CreateProperty
+          Condition=" '@(AdditionalReferencePath)'!='' "
+          Value="$(OutDir);@(AdditionalReferencePath)" >
+      <Output TaskParameter="Value" PropertyName="ReferencePath" />
+    </CreateProperty>
+
+    <CreateProperty
+          Condition=" '@(AdditionalReferencePath)'=='' "
+          Value="$(OutDir)" >
+      <Output TaskParameter="Value" PropertyName="ReferencePath" />
+    </CreateProperty>
+
+    <TeamBuildMessage
+          Tag="Configuration"
+          Condition=" '$(IsDesktopBuild)'!='true' "
+          Value="%(ConfigurationToBuild.FlavorToBuild)" />
+
+    <TeamBuildMessage
+          Tag="Platform"
+          Condition=" '$(IsDesktopBuild)'!='true' "
+          Value="%(ConfigurationToBuild.PlatformToBuild)" />
+
+    <!-- Generate VCOverride file for C++ projects -->
+    <WriteLinesToFile
+          File="TFSBuild.vsprops"
+          Lines="$(VCOverridesString1)$(VCOverridesString2)$(AdditionalVCOverrides)$(VCOverridesString3)"
+          Overwrite="true" />
+
+    <!-- Build using MSBuild task -->
+    <MSBuild
+          Condition=" '@(SolutionToBuild)'!='' "
+          Projects="@(SolutionToBuild)"
+          Properties="Configuration=%(ConfigurationToBuild.FlavorToBuild);Platform=%(ConfigurationToBuild.PlatformToBuild);SkipInvalidConfigurations=true;VCBuildOverride=$(MSBuildProjectDirectory)\TFSBuild.vsprops;FxCopDir=$(FxCopDir);OutDir=$(OutDir);ReferencePath=$(ReferencePath);TeamBuildConstants=$(TeamBuildConstants);$(CodeAnalysisOption)"
+          Targets="Build" />
+
+    <!--
+         Specify SolutionToPublish ItemGroup if you have ClickOnce based
+         solutions or projects that you want to publish. The task below
+         will generate manifest and deployment package.
+     -->
+    <MSBuild
+          Condition=" '@(SolutionToPublish)'!='' "
+          Projects="@(SolutionToPublish)"
+          Properties="Configuration=%(ConfigurationToBuild.FlavorToBuild);Platform=%(ConfigurationToBuild.PlatformToBuild);SkipInvalidConfigurations=true;VCBuildOverride=$(MSBuildProjectDirectory)\TFSBuild.vsprops;FxCopDir=$(FxCopDir);OutDir=$(OutDir);PublishDir=$(OutDir);ReferencePath=$(ReferencePath);TeamBuildConstants=$(TeamBuildConstants);$(CodeAnalysisOption)"
+          Targets="Publish" />
+
+    <OnError ExecuteTargets="OnBuildBreak;" />
+  </Target>
+
+  <PropertyGroup>
+    <PostBuildDependsOn>
+      GetChangeSetsAndUpdateWorkItems;
+    </PostBuildDependsOn>
+  </PropertyGroup>
+  <Target Name="PostBuild"
+          Condition=" '$(SkipPostBuild)'!='true' and '$(IsDesktopBuild)'!='true' "
+          DependsOnTargets="$(PostBuildDependsOn)" />
+
+  <Target Name="GetChangeSetsAndUpdateWorkItems" >
+    <GenCheckinNotesUpdateWorkItems
+          TeamFoundationServerUrl="$(TeamFoundationServerUrl)"          
+          BuildId="$(BuildNumber)"
+          CurrentLabel="L$(BuildNumber)$(LabelQueryScope)"
+          LastLabel="L$(LastGoodBuildNumber)$(LabelQueryScope)"
+          UpdateWorkItems="$(UpdateAssociatedWorkItems)"
+          ContinueOnError="true" />
+
+  </Target>
+
+  <!-- Override this target to plugin custom tasks before running tests -->
+  <Target Name="BeforeTest" />
+
+  <PropertyGroup>
+    <TestDependsOn>
+      BeforeTest;
+      CoreTest;
+      AfterTest;
+    </TestDependsOn>
+  </PropertyGroup>
+  <!-- Batch target for testing activities -->
+  <Target Name="Test"          
+          DependsOnTargets="$(TestDependsOn)" />
+
+  <!-- Override this target to plugin custom tasks after tests -->
+  <Target Name="AfterTest" />
+
+  <PropertyGroup>
+    <CoreTestDependsOn/>
+  </PropertyGroup>
+  <Target Name="CoreTest"
+          Condition=" '$(RunTest)'=='true' "
+          DependsOnTargets="$(CoreTestDependsOn)" >
+
+    <MakeDir
+          Directories="$(TestResultsRoot)"
+          Condition="!Exists('$(TestResultsRoot)')" />
+
+    <MSBuild
+          Projects="$(MSBuildProjectFile)"
+          Targets="RunTestWithConfiguration"
+          Properties="BuildNumber=$(BuildNumber);Platform=%(ConfigurationToBuild.PlatformToBuild);Flavor=%(ConfigurationToBuild.FlavorToBuild);IsDesktopBuild=$(IsDesktopBuild)" />
+  </Target>
+
+  <Target Name="RunTestWithConfiguration" >
+
+    <TeamBuildMessage
+          Tag="Configuration"
+          Condition=" '$(IsDesktopBuild)'!='true' "
+          Value="$(Flavor)" />
+
+    <TeamBuildMessage
+          Tag="Platform"
+          Condition=" '$(IsDesktopBuild)'!='true' "
+          Value="$(Platform)" />
+
+    <!-- SearchPathRoot for not Any CPU -->
+    <CreateProperty
+          Condition=" '$(Platform)'!='Any CPU' "
+          Value="$(BinariesRoot)\$(Platform)\$(Flavor)\" >
+      <Output TaskParameter="Value" PropertyName="SearchPathRoot" />
+    </CreateProperty>
+
+    <!-- SearchPathRoot for Any CPU -->
+    <CreateProperty
+          Condition=" '$(Platform)'=='Any CPU' "
+          Value="$(BinariesRoot)\$(Flavor)\" >
+      <Output TaskParameter="Value" PropertyName="SearchPathRoot" />
+    </CreateProperty>
+
+    <!-- Test task for the end-to-end build -->
+    <TestToolsTask
+          Condition=" '$(IsDesktopBuild)'!='true' and '%(MetaDataFile.Identity)'!=''"
+          BuildFlavor="$(Flavor)"
+          Platform="$(Platform)"
+          PublishServer="$(TeamFoundationServerUrl)"
+          PublishBuild="$(BuildNumber)"
+          SearchPathRoot="$(SearchPathRoot)"
+          PathToResultsFilesRoot="$(TestResultsRoot)"
+          MetaDataFile="%(MetaDataFile.Identity)"
+          RunConfigFile="$(RunConfigFile)"
+          TestLists="%(MetaDataFile.TestList)"
+          TeamProject="$(TeamProject)"
+          ContinueOnError="true" />
+
+    <!-- Test task for the desktop build -->
+    <TestToolsTask
+          Condition=" '$(IsDesktopBuild)'!='false' and '%(MetaDataFile.Identity)'!=''"
+          SearchPathRoot="$(SearchPathRoot)"
+          PathToResultsFilesRoot="$(TestResultsRoot)"
+          MetaDataFile="%(MetaDataFile.Identity)"
+          RunConfigFile="$(RunConfigFile)"
+          TestLists="%(MetaDataFile.TestList)"
+          ContinueOnError="true" />
+
+  </Target>
+
+  <!-- Override this target to package all binaries for deployment. -->
+  <Target Name="PackageBinaries" />
+
+  <!-- Override this target to plugin custom tasks before DropBuild -->
+  <Target Name="BeforeDropBuild" />
+
+  <PropertyGroup>
+    <DropBuildDependsOn>
+      BeforeDropBuild;
+      CoreDropBuild;
+      CopyLogFiles;
+      AfterDropBuild;
+    </DropBuildDependsOn>
+  </PropertyGroup>
+  <!-- Batch target for copy -->
+  <Target Name="DropBuild"          
+          DependsOnTargets="$(DropBuildDependsOn)" />
+
+  <!-- Override this target to plugin custom tasks after DropBuild target -->
+  <Target Name="AfterDropBuild" />
+
+  <PropertyGroup>
+    <CoreDropBuildDependsOn/>
+  </PropertyGroup>
+  <!-- Task will copy binaries and log file to drop location. Please note that this is presently for only non desktop scenarios -->
+  <Target Name="CoreDropBuild"
+          Condition=" '$(IsDesktopBuild)'!='true' and '$(SkipDropBuild)'!='true' "
+          DependsOnTargets="$(CoreDropBuildDependsOn)" >
+
+    <!-- Copy output assemblies -->
+    <CreateItem Include="$(BinariesRoot)\**\*.*" >
+      <Output ItemName="FilesToCopy" TaskParameter="Include" />
+    </CreateItem>
+
+    <Copy
+          SourceFiles="@(FilesToCopy)"
+          DestinationFiles="@(FilesToCopy ->'$(DropLocation)\$(BuildNumber)\%(RecursiveDir)%(Filename)%(Extension)')"
+          ContinueOnError="true" />
+
+  </Target>
+
+  <!-- Override this target to plugin custom tasks before handling BuildBreak target -->
+  <Target Name="BeforeOnBuildBreak" />
+
+  <PropertyGroup>
+    <OnBuildBreakDependsOn>
+      BeforeOnBuildBreak;
+      GetChangeSetsOnBuildBreak;
+      DropBuild;
+      CreateWorkItem;
+      AfterOnBuildBreak;
+    </OnBuildBreakDependsOn>
+  </PropertyGroup>
+  <Target Name="OnBuildBreak"
+          Condition=" '$(IsDesktopBuild)'!='true' "
+          DependsOnTargets="$(OnBuildBreakDependsOn)" />
+
+  <!-- Override this target to plugin custom tasks after BuildBreak target -->
+  <Target Name="AfterOnBuildBreak" />
+
+  <Target Name="GetChangeSetsOnBuildBreak"
+          Condition=" '$(IsDesktopBuild)'!='true' " >
+
+    <!-- Get associated changesets even when build fails. -->
+    <GenCheckinNotesUpdateWorkItems
+          TeamFoundationServerUrl="$(TeamFoundationServerUrl)"          
+          BuildId="$(BuildNumber)"
+          CurrentLabel="L$(BuildNumber)$(LabelQueryScope)"
+          LastLabel="L$(LastGoodBuildNumber)$(LabelQueryScope)"
+          UpdateWorkItems="false"
+          ContinueOnError="true" />
+  </Target>
+
+  <Target Name="CopyLogFiles"
+          Condition=" '$(IsDesktopBuild)'!='true' " >
+
+    <CreateItem
+          Include="$(MSBuildProjectDirectory)\*.txt"
+          Exclude="$(MSBuildProjectDirectory)\BuildLog.txt" >
+      <Output ItemName="LogFilesToCopy" TaskParameter="Include" />
+    </CreateItem>
+
+    <Copy
+          SourceFiles="@(LogFilesToCopy)"
+          DestinationFiles="@(LogFilesToCopy ->'$(DropLocation)\$(BuildNumber)\%(Filename).txt')"
+          SkipUnchangedFiles="true"
+          ContinueOnError="true" />
+
+  </Target>
+
+  <!-- Create bug for static analysis and compile errors -->
+  <PropertyGroup>
+   
+    <!-- Work item created on build failure - by default it is "Bug" -->
+    <WorkItemType></WorkItemType>
+  </PropertyGroup>
+  <Target Name="CreateWorkItem"
+          Condition=" '$(SkipWorkItemCreation)'!='true' and '$(IsDesktopBuild)'!='true' " >
+    
+    <CreateProperty Value="$(WorkItemTitle) $(BuildNumber)">
+      <Output TaskParameter="Value" PropertyName="WorkItemTitle" />
+    </CreateProperty>
+
+    <CreateProperty Value="$(BuildlogText) 
+        &lt;a
+        href='file:///$(DropLocation)\$(BuildNumber)\BuildLog.txt'
+        &gt;
+        $(DropLocation)\$(BuildNumber)\BuildLog.txt
+        &lt;/a &gt;.
+      ">
+      <Output TaskParameter="Value" PropertyName="BuildlogText" />
+    </CreateProperty>
+
+    <CreateProperty Value="$(ErrorWarningLogText)
+        &lt;a
+        href='file:///$(DropLocation)\$(BuildNumber)\ErrorsWarningsLog.txt'
+        &gt;
+        $(DropLocation)\$(BuildNumber)\ErrorsWarningsLog.txt
+        &lt;/a &gt;.
+      ">
+      <Output TaskParameter="Value"
+              PropertyName="ErrorWarningLogText"
+              Condition="Exists('$(DropLocation)\$(BuildNumber)\ErrorsWarningsLog.txt')" />
+    </CreateProperty>
+
+    <CreateProperty Value="$(DescriptionText) %3CBR%2F%3E $(BuildlogText) %3CBR%2F%3E $(ErrorWarningLogText)">
+      <Output TaskParameter="Value" PropertyName="WorkItemDescription" />
+    </CreateProperty>
+
+    <!-- Create WorkItem for build failure -->
+    <CreateNewWorkItem
+          BuildId="$(BuildNumber)"
+          Description="$(WorkItemDescription)"
+          TeamProject="$(TeamProject)"
+          TeamFoundationServerUrl="$(TeamFoundationServerUrl)"
+          Title="$(WorkItemTitle)"
+          WorkItemFieldValues="$(WorkItemFieldValues)"
+          WorkItemType="$(WorkItemType)"
+          ContinueOnError="true" />
+  </Target>
+
+</Project>

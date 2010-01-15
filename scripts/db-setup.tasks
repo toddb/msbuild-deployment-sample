@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="HelpDbSetup" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  
+  <!--
+    ReleaseEnvironment is already setup through build.tasks
+    UserDomain is part of the environment settings
+  -->
+  <PropertyGroup>
+    <ReleaseEnvironment Condition="'$(ReleaseEnvironment)'==''">Test</ReleaseEnvironment>
+    <DbServer Condition="'$(DbServer)'==''">(local)</DbServer>
+    <DbName>Sample$(ReleaseEnvironment)</DbName>
+    <DbCmsName>Sample$(ReleaseEnvironment)</DbCmsName>
+    <DbSqlUser Condition="'$(DbSqlUser)'==''">$(DbName)</DbSqlUser>
+    <DbSqlUserPassword Condition="'$(DbSqlUserPassword)'==''">N0tsecr3t</DbSqlUserPassword>
+    <DbDomainUser Condition="'$(DbDomainUser)'==''">$(USERDOMAIN)\$(DbName)</DbDomainUser>
+  </PropertyGroup>
+
+  <Target Name="SetupDb" DependsOnTargets="CheckAlias;AddUser;CreateDb;AddDomainUser" />
+  <Target Name="CleanDb" DependsOnTargets="DropDb;DeleteUser" />
+
+  <Target Name="CheckAlias">
+    <Message Text="Checking for Sql Server client alias: DbServer" />
+    <MSBuild.ExtensionPack.Computer.Registry TaskAction="CheckEmpty" RegistryHive="LocalMachine" Key="SOFTWARE\Microsoft\MSSQLServer\Client\ConnectTo">
+      <Output PropertyName="REmpty" TaskParameter="Empty"/>
+    </MSBuild.ExtensionPack.Computer.Registry>
+    <Error Text="Alias SampleDbUser for MSSQL is not set up [HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\MSSQLServer\Client\ConnectTo] because it exists but is empty" Condition="'$(REmpty)'=='True'"/>
+  </Target>
+
+  <!-- Targets for creating and deleting the database user from the localmachine ready for adding to the database -->
+ 
+  <Target Name="AddUser">
+    <Message Text="Adding user to the local machine: $(DbDomainUser)" />
+    <Exec Command="net user $(DbSqlUser) $(DbSqlUserPassword) /ADD /fullname:&quot;$(DbSqlUser) Db&quot;" ContinueOnError="true">
+      <Output TaskParameter="ExitCode" PropertyName="ExitCode"/>
+    </Exec>
+    <Message Text="The user $(DbSqlUser) could not be added because it already exists. The script will continue." Condition="'$(ExitCode)'=='2'"/>
+    <Error Text="The user $(DbSqlUser) could not be added for some reason - ExitCode: $(ExitCode)" Condition=" '$(ExitCode)' != '2' And '$(ExitCode)'!='0' "/>
+  </Target>
+
+  <Target Name="DeleteUser">
+    <Exec Command="net user $(DbSqlUser) /DELETE" ContinueOnError="true">
+      <Output TaskParameter="ExitCode" PropertyName="ExitCode"/>
+    </Exec>
+    <Message Text="The user $(DbSqlUser) could not be deleted because it does not exist. The script will continue." Condition=" '$(ExitCode)' == '2' "/>
+    <Error Text="The user $(DbSqlUser) could not be deleted for some reason - ExitCode: $(ExitCode)" Condition=" '$(ExitCode)' != '2'  And '$(ExitCode)'!='0' "/>
+  </Target>
+  
+  <!-- Targets for the main Database-->
+
+  <Target Name="CreateDb">
+    <Message Text="Creating Database: $(DbServer).$(DbName)"/>
+    <Exec Command="sqlcmd -s $(DbServer) -i scripts\db\create.sql -v database=$(DbName)" />
+  </Target>
+
+  <Target Name="DropDb">
+    <Exec Command="sqlcmd -s $(DbServer) -i scripts\db\drop.sql -v database=$(DbName)" />
+  </Target>
+
+  <Target Name="AddSqlUser">
+    <Exec Command="sqlcmd -s $(DbServer) -i scripts\db\user-for-db.sql -v database=$(DbName) user=$(DbSqlUser) password=$(DbSqlUserPassword)" />
+  </Target>
+
+  <Target Name="AddDomainUser">
+    <Exec Command="sqlcmd -s $(DbServer) -i scripts\db\domainuser-for-db.sql -v database=$(DbName) user=$(DbDomainUser)" />
+  </Target>
+
+
+  <Target Name="HelpDbSetup">
+    <Message Text="
+             
+    For setting up the Sample database with 
+    the correct user and checking the alias are in place
+                              
+    msbuild /t:SetupDb
+    msbuild /t:CleanDb
+ 
+    Variables that can be overridden:
+      ReleaseEnvironment=[$(ReleaseEnvironment)]|Prod|Beta
+      DbServer=$(DbServer)
+      DbName=$(DbName)
+      DbDomainUser=$(DbDomainUser)
+
+    Targets:
+     - CheckAlias: ensure you have an alias setup for the database
+     - AddUser (local machine users)
+     - DeleteUser (local machine users)
+      Database
+     - CreateDb
+     - DropDb
+     - AddSqlUser (to db)
+     - AddDomainUser (to db)
+
+             " />
+  </Target>
+</Project>

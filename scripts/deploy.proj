@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Help" ToolsVersion="3.5" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup>
+    <AppPool>Sample$(Environment)</AppPool>
+    <Identity>Sample$(Environment)</Identity>
+    <Site>$(Environment).example.com</Site>
+    <AppPool>Sample.co.nz</AppPool>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Environment)'=='Prod'">
+    <WebSiteName>www.example.com</WebSiteName>
+    <BaseFolder>C:\Websites\Sample.co.nz\www</BaseFolder>
+    <DeployFolder>$(BaseFolder)\$(Version)</DeployFolder>
+    <HttpsBinding>127.0.0.1:443:$(Site)</HttpsBinding>
+    <HttpBinding>127.0.0.1:80:$(Site)</HttpBinding>
+    <Identity>NetworkService</Identity>
+    <Site>www.example.com</Site>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Environment)'=='Test'">
+    <WebSiteName>$(Environment).example.com</WebSiteName>
+    <BaseFolder>C:\websites\$(Site)</BaseFolder>
+    <DeployFolder>$(BaseFolder)\$(Version)</DeployFolder>
+    <HttpBinding>*:81:$(Site)</HttpBinding>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Environment)'=='Beta'">
+    <WebSiteName>$(Environment).example.com</WebSiteName>
+    <BaseFolder>C:\Websites\$(Site)</BaseFolder>
+    <DeployFolder>$(BaseFolder)\$(Version)</DeployFolder>
+    <HttpsBinding>127.0.0.1:443:$(Site)</HttpsBinding>
+    <HttpBinding>127.0.0.1:80:$(Site)</HttpBinding>
+    <Identity>NetworkService</Identity>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <SrcFolder>$(MSBuildProjectDirectory)\site</SrcFolder>
+    <MSBuildExtensionsPath>$(MSBuildProjectDirectory)\lib</MSBuildExtensionsPath>
+    <TasksPath>$(MSBuildProjectDirectory)\lib\extensionpack\MSBuild.ExtensionPack.tasks</TasksPath>
+  </PropertyGroup>
+
+  <Import Project="$(TasksPath)"/>
+  <Import Project="$(MSBuildProjectDirectory)\scripts\db-setup.tasks"/>
+  <Import Project="$(MSBuildProjectDirectory)\scripts\migrations.tasks"/>
+
+  <ItemGroup>
+    <WebFiles Include="$(SrcFolder)\**\*.*"  />
+    <Application Include="/$(Version)" Condition="'$(Environment)'=='Test'">
+      <PhysicalPath>$(DeployFolder)</PhysicalPath>
+    </Application>
+    <Application Include="/" Condition="'$(Environment)'=='Beta' Or '$(Environment)'=='Prod'">
+      <PhysicalPath>$(DeployFolder)</PhysicalPath>
+    </Application>
+  </ItemGroup>
+
+  <Target Name="DeployWebsite" DependsOnTargets="CopyWebSite">
+    <Message Text="Deploying site version: $(Version) for environment $(Environment)"/>
+    <CallTarget Targets="CreateAppPool"/>
+    <CallTarget Targets="CreateWebsite"/>
+    <CallTarget Targets="CreateBindingHttp"/>
+    <CallTarget Targets="CreateBindingHttps" Condition="'$(Environment)'!='Test'"/>
+    <CallTarget Targets="AddApplication"/>
+    <CallTarget Targets="ModifyWebsite" Condition="'$(Environment)'!='Test'"/>
+    <CallTarget Targets="SetupDirectoryBrowsing" Condition="'$(Environment)'=='Test'"/>
+    <CallTarget Targets="StartWebsite"/>
+  </Target>
+
+  <Target Name="CopyWebSite">
+    <MakeDir Directories="$(DeployFolder)" />
+    <Message Text="Copying files from $(SrcFolder) to $(DeployFolder)"/>
+    <Copy SourceFiles="@(WebFiles)" DestinationFiles="@(WebFiles->'$(DeployFolder)\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true"/>
+  </Target>
+
+  <Target Name="CreateAppPool">
+    <MSBuild.ExtensionPack.Web.Iis7AppPool TaskAction="CheckExists" Name="$(AppPool)">
+      <Output TaskParameter="Exists" PropertyName="DoesExist"/>
+    </MSBuild.ExtensionPack.Web.Iis7AppPool>
+    <!--
+      Creates a binding to a user that must exist - if $(Identity) fails then checks Users and Groups
+    -->
+    <MSBuild.ExtensionPack.Web.Iis7AppPool TaskAction="Create" Name="$(AppPool)" RecycleRequests="45" RecycleInterval="1987" Force="true" MaxProcesses="5" IdentityType="$(Identity)" PipelineMode="Integrated"  Condition="'$(DoesExist)'=='False'"/>
+  </Target>
+
+  <Target Name="AddApplication">
+    <MSBuild.ExtensionPack.Web.Iis7Application TaskAction="CheckExists" Website="$(WebSiteName)" Applications="@(Application)">
+      <Output TaskParameter="Exists" PropertyName="DoesExist"/>
+    </MSBuild.ExtensionPack.Web.Iis7Application>
+    <MSBuild.ExtensionPack.Web.Iis7Website TaskAction="AddApplication" Name="$(WebSiteName)" Applications="@(Application)" Condition="'$(DoesExist)'=='False'"/>
+  </Target>
+
+  <Target Name="CreateBindingHttps">
+    <MSBuild.ExtensionPack.Web.Iis7Binding TaskAction="CheckExists" Name="$(WebSiteName)" BindingInformation="$(HttpsBinding)" BindingProtocol="https">
+      <Output TaskParameter="Exists" PropertyName="DoesExist"/>
+    </MSBuild.ExtensionPack.Web.Iis7Binding>
+    <MSBuild.ExtensionPack.Web.Iis7Binding TaskAction="Add" Name="$(WebSiteName)" BindingInformation="$(HttpsBinding)" BindingProtocol="https" Condition="'$(DoesExist)'=='False'"/>
+  </Target>
+
+  <Target Name="CreateBindingHttp">
+    <MSBuild.ExtensionPack.Web.Iis7Binding TaskAction="CheckExists" Name="$(WebSiteName)" BindingInformation="$(HttpBinding)" BindingProtocol="http">
+      <Output TaskParameter="Exists" PropertyName="DoesExist"/>
+    </MSBuild.ExtensionPack.Web.Iis7Binding>
+    <MSBuild.ExtensionPack.Web.Iis7Binding TaskAction="Add" Name="$(WebSiteName)" BindingInformation="$(HttpBinding)" BindingProtocol="http" Condition="'$(DoesExist)'=='False'"/>
+  </Target>
+
+  <Target Name="CreateWebsite">
+    <MSBuild.ExtensionPack.Web.Iis7Website TaskAction="CheckExists" Name="$(WebSiteName)">
+      <Output TaskParameter="Exists" PropertyName="SiteExists"/>
+    </MSBuild.ExtensionPack.Web.Iis7Website>
+    <Message Text="$(WebSiteName) SiteExists: $(SiteExists)"/>
+    <Message Text="VERSION is NOT SET - this will fail" Condition="'$(Version)'==''"/>
+    <MSBuild.ExtensionPack.Web.Iis7Website TaskAction="Create" Name="$(WebSiteName)" AppPool="$(AppPool)" Path="$(BaseFolder)" Port="80" Force="true" Condition="'$(SiteExists)'=='False'"/>
+  </Target>
+
+  <Target Name="ModifyWebsite" Condition="'$(Environment)'!='Test'">
+    <MSBuild.ExtensionPack.Web.Iis7Website TaskAction="CheckExists" Name="$(WebSiteName)">
+      <Output TaskParameter="Exists" PropertyName="SiteExists"/>
+    </MSBuild.ExtensionPack.Web.Iis7Website>
+    <MSBuild.ExtensionPack.Web.Iis7Website TaskAction="ModifyPath" Name="$(WebSiteName)" Path="$(DeployFolder)" Condition="'$(DoesExist)'=='True'"/>
+  </Target>
+
+  <Target Name="SetupDirectoryBrowsing" Condition="!Exists('$(DeployFolder)\web.config') And '$(Environment)'=='Test'">
+    <Message Text="Create a web.config in $(DeployFolder) for directory browsing"/>
+    <Copy SourceFiles="directorybrowsing.xml" DestinationFiles="$(DeployFolder)\web.config" />
+  </Target>
+
+  <Target Name="StartWebsite">
+    <MSBuild.ExtensionPack.Web.Iis7Website TaskAction="Start" Name="$(WebSiteName)"/>
+  </Target>
+
+  <Target Name="Help">
+    <Message Text="
+             
+    msbuild /t:DeployWebsite /p:Version=1.0.0.0;Environment=Test
+    
+    Note: it doesn't install certs for https. This still needs to be done manually.
+    
+    The Test environment has 
+      - directory browsing
+      - creates a virtual directory for each release
+ 
+    Variables that must be specified:
+      Version=x.x.x.x
+      Environment=Release|Beta|[Test]
+
+    Targets:
+     - CopyWebSite
+     - CreateAppPool
+     - CreateWebsite
+     - AddApplication
+     - ModifyWebsite
+     - CreateBindingHttp
+     - CreateBindingHttps
+     - SetupDirectoryBrowsing
+     - StartWebsite
+
+    TODO: 
+    - better approach for directory browsing
+    " />
+    <CallTarget Targets="HelpDbSetup"/>
+    <CallTarget Targets="HelpMigrations"/>
+  </Target>
+</Project>

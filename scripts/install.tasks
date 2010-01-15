@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="HelpInstall" ToolsVersion="3.5" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup>
+    <ReleaseEnvironment Condition="'$(ReleaseEnvironment)'==''">Test</ReleaseEnvironment>
+    <Package Condition="'$(Package)'==''"></Package>
+    <ReleaseFolder Condition="'$(ReleaseFolder)'==''">C:\Releases</ReleaseFolder>
+    <MSBuildExtensionsPath>$(MSBuildProjectDirectory)\lib</MSBuildExtensionsPath>
+    <TasksPath>$(MSBuildProjectDirectory)\lib\extensionpack\MSBuild.ExtensionPack.tasks</TasksPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageFile Include="$(Package)"/>
+  </ItemGroup>
+
+  <Target Name="InstallRelease" DependsOnTargets="Extract;Deploy" />
+
+  <Target Name="Prepare">
+    <Message Text="Package must be set: msbuild /t:InstallRelease /p:Package=path/to/sample-env-version.zip" Condition="'$(Package)'==''"/>
+    <CreateItem Include="$(ReleaseFolder)\%(PackageFile.Filename)">
+      <Output TaskParameter="Include" PropertyName="ExtractPath"/>
+    </CreateItem>
+  </Target>
+
+  <Target Name="Extract" DependsOnTargets="Prepare">
+    <MakeDir Directories="$(ExtractPath)"  Condition = "!Exists('$(ExtractPath)')"/>
+    <MSBuild.ExtensionPack.Compression.Zip TaskAction="Extract" ExtractPath="$(ExtractPath)" ZipFileName="%(PackageFile.Fullpath)"/>
+  </Target>
+
+  <Target Name="Deploy" DependsOnTargets="Prepare">
+    <Message Text="To make this run, you must have logged in as administrator using runas /savecred /user:administrator cmd"/>
+    <Exec Command="$(ExtractPath)\DeployTestAsAdmin.bat $(ExtractPath)" />
+  </Target>
+
+  <Target Name="HelpInstall">
+    <Message Text="
+             
+    msbuild /t:InstallRelease /p:Package=path/to/sample-env-version.zip;RunAsUser=user
+    msbuild /t:InstallRelease /p:Package=CodeToDeploy/Releases/sample-Test-*.zip  (can also use wildcard if there is only one version to be found)
+       
+    A set of tasks to aid installing a zip archive of the web 
+    package onto an IIS server particularly form the build agent. The 
+    scripts replicatesthe manual process of copying a zip and 
+    extracting to a folder and then installing by doubling clicking on 
+    the deploy.bat file in that folder. Note that the current 
+    implementation assumes that the build agent and IIS are on 
+    the same machine.
+    
+    The requires:
+     - path to the package to install (eg Package=/path/to/file.zip)
+     
+    Optional:
+     - release environment currently defaulting to Test (eg ReleaseEnvironment=$(ReleaseEnvironment)
+     
+    Targets:
+     - InstallRelease
+     
+     - Extract
+     - Deploy
+     
+    Dependencies: 7zip installed on the IIS box and available on PATH
+             
+    " />
+  </Target>
+
+</Project>

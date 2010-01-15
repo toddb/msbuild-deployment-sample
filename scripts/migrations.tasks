@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+        <ClassLibraryOutputDirectory>bin\$(Configuration)</ClassLibraryOutputDirectory>
+        <MigratorTasksPath>$(MSBuildProjectDirectory)..\lib\migratordotnet</MigratorTasksPath>
+        <MigrationsProject>$(MSBuildProjectDirectory)\..\src\Infrastructure\Infrastructure.csproj</MigrationsProject>
+        <ScriptFile>$(MSBuildProjectDirectory)\..\src\Infrastructure\Db\Sql\migration-latest.sql</ScriptFile>
+        <MigrationsReleaseDll>$(MSBuildProjectDirectory)\site\bin\Infrastructure.dll</MigrationsReleaseDll>
+      <DB Condition="'$(DB)'==''">(local)</DB>
+        <DBName Condition="'$(DBName)'==''">Sample</DBName>
+    </PropertyGroup>
+    
+    <Import Project="$(MigratorTasksPath)\Migrator.Targets" />
+    
+    <Target Name="Build-Migrations">
+        <MSBuild Projects="$(MigrationsProject)" Targets="Build">
+            <Output TaskParameter="TargetOutputs" ItemName="MigrationAssemblies" />
+        </MSBuild>
+        
+        <Message Text="Built: @(MigrationAssemblies)"/>
+    </Target>
+    
+    <Target Name="Migrate" DependsOnTargets="Build-Migrations">
+        <Message Text="Migrating: @(MigrationAssemblies)"/>
+        
+        <CreateProperty Value="-1"  Condition="'$(SchemaVersion)'==''">
+            <Output TaskParameter="Value" PropertyName="SchemaVersion"/>
+        </CreateProperty>
+        <Migrate Provider="SqlServer"
+            Connectionstring="Database=$(DBName);Data Source=$(DB);Integrated Security=true;"
+            Migrations="@(MigrationAssemblies)"
+            To="$(SchemaVersion)"
+            Scriptfile="$(ScriptFile)"/>
+    </Target>
+
+  <Target Name="MigrateUp">
+    <CreateProperty Value="-1"  Condition="'$(SchemaVersion)'==''">
+      <Output TaskParameter="Value" PropertyName="SchemaVersion"/>
+    </CreateProperty>
+    <Migrate Provider="SqlServer"
+            Connectionstring="Database=$(DBName);Data Source=$(DB);Integrated Security=true;"
+            Migrations="$(MigrationsReleaseDll)"
+            To="$(SchemaVersion)"/>
+  </Target>
+
+  <Target Name="HelpMigrations">
+    <Message Text="
+             
+    msbuild /t:MigrateUp
+     
+    Targets:
+     - Migrate
+     - Build-Migrations
+     
+    TODO: separate out some migrations that go with package and those for devs
+     
+             "/>
+  </Target>
+</Project>
