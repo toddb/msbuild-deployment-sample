@@ -4,7 +4,7 @@ A fuller explanation of the cycles and msbuild are here:
 
 http://blog.goneopen.com/2010/01/introduction-to-using-msbuild-to-manage-asp-net-mvc-application-lifecycles/
 
-Currently, psake is implemented as a wrapper around msbuild to demonstrate its usage
+Currently, psake is implemented as a wrapper around msbuild to demonstrate the usage of psake (rather than how to write in poweshell)
 
 Installation:
 
@@ -20,7 +20,3 @@ Usage:
 
 > msbuild /t:package
 > msbuild /t:package /p:revision=1
-
-TODO:
-
-- rewrite all msbuild commands in psake
