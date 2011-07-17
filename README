@@ -1,0 +1,26 @@
+Sample project to demonstrate using msbuild and psake to manage asp.net mvc application lifecycles. 
+
+A fuller explanation of the cycles and msbuild are here:
+
+http://blog.goneopen.com/2010/01/introduction-to-using-msbuild-to-manage-asp-net-mvc-application-lifecycles/
+
+Currently, psake is implemented as a wrapper around msbuild to demonstrate its usage
+
+Installation:
+
+- ensure binaries from tools/ are installed
+
+Usage:
+
+- Run here.cmd
+
+> invoke-psake package
+> invoke-psake package -properties @{revision=1}
+
+
+> msbuild /t:package
+> msbuild /t:package /p:revision=1
+
+TODO:
+
+- rewrite all msbuild commands in psake
